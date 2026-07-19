@@ -4,9 +4,8 @@ import {
   X, Printer, Share2, Check, Send, AlertCircle, Loader2, FileText, ExternalLink, Download
 } from "lucide-react";
 import { Candidate, Country, Agency } from "../types";
-import { collection, addDoc } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { getBilingualValue, getChildrenBilingual } from "../lib/translate";
+import { apiDbLogWhatsAppSend } from "../lib/api";
 // @ts-ignore
 import html2pdf from "html2pdf.js";
 
@@ -357,9 +356,9 @@ export default function CandidatePreview({
       };
 
       try {
-        await addDoc(collection(db, "whatsappSends"), sendRecord);
-      } catch (firestoreErr) {
-        handleFirestoreError(firestoreErr, OperationType.CREATE, "whatsappSends");
+        await apiDbLogWhatsAppSend(sendRecord);
+      } catch (apiErr) {
+        console.error("Failed to log WhatsApp send:", apiErr);
       }
 
       // Simulate a small delay
