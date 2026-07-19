@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { Candidate, Country, Agency } from "../types";
 import { apiDbSaveCandidate } from "../lib/api";
-import { generateCandidatePdf } from "../lib/pdfGenerator";
 
 interface CandidateFormProps {
   candidate?: Candidate | null;
@@ -756,22 +755,15 @@ export default function CandidateForm({
       };
 
       if (onPreview) {
-        // Use the current, up-to-date CV template (same one shown in "Preview CV PDF")
-        // instead of the outdated jsPDF-drawn layout, so Export and Preview always match.
+        // Always use the current, up-to-date CV template (same one shown in "Preview CV PDF").
         onPreview(tempCandidate);
       } else {
-        // Fallback for any context where the preview isn't wired up.
-        const docObj = await generateCandidatePdf({
-          candidate: tempCandidate,
-          country: activeCountry,
-          agency: activeAgency,
-          ourAgency
-        });
-
-        const now = new Date();
-        const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-        const fileName = `CV_${tempCandidate.name.replace(/\s+/g, "_")}_${refNo}_${timestamp}.pdf`;
-        docObj.save(fileName);
+        // onPreview should always be passed by the parent (Dashboard.tsx). If it's ever
+        // missing, fail loudly instead of silently falling back to the outdated jsPDF
+        // template, which no longer matches the live dashboard design.
+        throw new Error(
+          "Preview handler not connected. Cannot export CV PDF — please contact support instead of using the outdated export path."
+        );
       }
     } catch (err: any) {
       console.error("PDF Export error:", err);
