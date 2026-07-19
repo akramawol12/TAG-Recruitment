@@ -91,6 +91,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
   // Modal active states
   const [activeFormCandidate, setActiveFormCandidate] = useState<Candidate | null | undefined>(undefined); // undefined means closed, null means new candidate, Candidate object means edit
   const [activePreviewCandidate, setActivePreviewCandidate] = useState<Candidate | null>(null);
+  const [draftPreviewCandidate, setDraftPreviewCandidate] = useState<Candidate | null>(null); // unsaved edits from the CV Builder form, previewed as-is (no lookup against saved candidates)
 
   // Active Tab state for local navigation
   const [activeTab, setActiveTab] = useState<"overview" | "builder" | "videos">("overview");
@@ -824,6 +825,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
                   setActiveFormCandidate(undefined);
                   setActiveTab("overview");
                 }}
+                onPreview={(tempCandidate) => setDraftPreviewCandidate(tempCandidate)}
               />
             ) : (
               renderBuilderWelcome()
@@ -860,6 +862,18 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
             />
           );
         })()}
+
+        {/* CV Builder "Export CV PDF" preview — uses the unsaved form data directly, not the saved record */}
+        {draftPreviewCandidate && (
+          <CandidatePreview
+            candidate={draftPreviewCandidate}
+            country={countries.find(c => c.id === draftPreviewCandidate.countryId) || null}
+            agency={agencies.find(a => a.id === countries.find(c => c.id === draftPreviewCandidate.countryId)?.partnerAgencyId) || null}
+            ourAgency={ourAgency}
+            onClose={() => setDraftPreviewCandidate(null)}
+            staffName={userName}
+          />
+        )}
       </AnimatePresence>
     </motion.div>
   );

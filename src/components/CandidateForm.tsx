@@ -16,6 +16,7 @@ interface CandidateFormProps {
   onClose: () => void;
   onSuccess: () => void;
   isInline?: boolean;
+  onPreview?: (tempCandidate: Candidate) => void;
 }
 
 const DEMO_PASSPORTS = [
@@ -100,7 +101,8 @@ export default function CandidateForm({
   staffId,
   onClose,
   onSuccess,
-  isInline = false
+  isInline = false,
+  onPreview
 }: CandidateFormProps) {
   const [activeTab, setActiveTab] = useState<"personal" | "passport" | "skills" | "deployment" | "attachments">("personal");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -753,17 +755,24 @@ export default function CandidateForm({
         updatedAt: new Date().toISOString(),
       };
 
-      const docObj = await generateCandidatePdf({
-        candidate: tempCandidate,
-        country: activeCountry,
-        agency: activeAgency,
-        ourAgency
-      });
+      if (onPreview) {
+        // Use the current, up-to-date CV template (same one shown in "Preview CV PDF")
+        // instead of the outdated jsPDF-drawn layout, so Export and Preview always match.
+        onPreview(tempCandidate);
+      } else {
+        // Fallback for any context where the preview isn't wired up.
+        const docObj = await generateCandidatePdf({
+          candidate: tempCandidate,
+          country: activeCountry,
+          agency: activeAgency,
+          ourAgency
+        });
 
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-      const fileName = `CV_${tempCandidate.name.replace(/\s+/g, "_")}_${refNo}_${timestamp}.pdf`;
-      docObj.save(fileName);
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+        const fileName = `CV_${tempCandidate.name.replace(/\s+/g, "_")}_${refNo}_${timestamp}.pdf`;
+        docObj.save(fileName);
+      }
     } catch (err: any) {
       console.error("PDF Export error:", err);
       setError(err.message || "Failed to generate and export PDF.");
@@ -1794,14 +1803,14 @@ export default function CandidateForm({
             onClick={handleExportPdf}
             disabled={isExportingPdf}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-100 cursor-pointer"
-            title="Download formatted A4 PDF containing biographical details and documents"
+            title="Preview the formatted A4 CV sheet with your latest changes, then download as PDF"
           >
             {isExportingPdf ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Download className="w-4 h-4" />
             )}
-            <span>Export CV PDF</span>
+            <span>Preview / Export CV PDF</span>
           </button>
 
           <button
