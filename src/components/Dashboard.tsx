@@ -9,9 +9,9 @@ import {
 import { Candidate, Country, Agency } from "../types";
 import { getBilingualValue } from "../lib/translate";
 import { 
-  collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, deleteDoc 
-} from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+  apiDbGetCountries, apiDbSaveCountry, apiDbGetAgencies, apiDbSaveAgency, 
+  apiDbGetCandidates, apiDbSaveCandidate, apiDbDeleteCandidate 
+} from "../lib/api";
 import CandidateForm from "./CandidateForm";
 import CandidatePreview from "./CandidatePreview";
 
@@ -97,86 +97,70 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
   const [selectedVideoCandidate, setSelectedVideoCandidate] = useState<Candidate | null>(null);
   const [videoSearchTerm, setVideoSearchTerm] = useState("");
 
-  // Seed default metadata if empty in Firestore
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
+
+  // Sync data with custom API proxy
   useEffect(() => {
-    const seedMetaData = async () => {
+    let active = true;
+
+    const loadData = async () => {
       try {
-        const countriesSnap = await getDocs(collection(db, "countries"));
-        if (countriesSnap.empty) {
+        const cntList = await apiDbGetCountries();
+        if (cntList.length === 0) {
           setIsSeeding(true);
           console.log("Seeding default countries and agencies...");
-          
-          const batch = writeBatch(db);
-          
-          // Seed agencies
-          DEFAULT_AGENCIES.forEach(agency => {
-            const agencyRef = doc(db, "agencies", agency.id);
-            batch.set(agencyRef, agency);
-          });
-
-          // Seed countries
-          DEFAULT_COUNTRIES.forEach(country => {
-            const countryRef = doc(db, "countries", country.id);
-            batch.set(countryRef, country);
-          });
-
-          await batch.commit();
+          await Promise.all([
+            ...DEFAULT_AGENCIES.map(agency => apiDbSaveAgency(agency)),
+            ...DEFAULT_COUNTRIES.map(country => apiDbSaveCountry(country))
+          ]);
           console.log("Seeding complete!");
           setIsSeeding(false);
+          triggerRefresh();
+          return;
         }
+
+        const [agList, candList] = await Promise.all([
+          apiDbGetAgencies(),
+          apiDbGetCandidates()
+        ]);
+
+        if (!active) return;
+
+        setCountries(cntList);
+        setAgencies(agList);
+        setCandidates(candList);
+        setIsLoading(false);
       } catch (err) {
-        console.error("Error seeding default Firestore data:", err);
-        setIsSeeding(false);
+        console.error("Error loading dashboard data:", err);
       }
     };
 
-    seedMetaData();
-  }, []);
+    loadData();
 
-  // Sync real-time data
-  useEffect(() => {
-    // 1. Listen to countries
-    const unsubscribeCountries = onSnapshot(collection(db, "countries"), (snap) => {
-      const list: Country[] = [];
-      snap.forEach(doc => list.push(doc.data() as Country));
-      setCountries(list);
-    });
-
-    // 2. Listen to agencies
-    const unsubscribeAgencies = onSnapshot(collection(db, "agencies"), (snap) => {
-      const list: Agency[] = [];
-      snap.forEach(doc => list.push(doc.data() as Agency));
-      setAgencies(list);
-    });
-
-    // 3. Listen to candidates
-    const unsubscribeCandidates = onSnapshot(collection(db, "candidates"), (snap) => {
-      const list: Candidate[] = [];
-      snap.forEach(doc => list.push(doc.data() as Candidate));
-      // Sort candidates by newest first
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setCandidates(list);
-      setIsLoading(false);
-    });
-
+    // Poll every 5 seconds for background changes
+    const interval = setInterval(loadData, 5000);
     return () => {
-      unsubscribeCountries();
-      unsubscribeAgencies();
-      unsubscribeCandidates();
+      active = false;
+      clearInterval(interval);
     };
-  }, []);
+  }, [refreshTrigger]);
 
   // Quick Action: Update Candidate Status
   const handleUpdateStatus = async (candidateId: string, newStatus: "available" | "placed" | "withdrawn") => {
     try {
-      const candidateRef = doc(db, "candidates", candidateId);
-      await setDoc(candidateRef, { 
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      const candidate = candidates.find(c => c.id === candidateId);
+      if (candidate) {
+        const updatedCandidate = {
+          ...candidate,
+          status: newStatus,
+          updatedAt: new Date().toISOString()
+        };
+        await apiDbSaveCandidate(updatedCandidate);
+        triggerRefresh();
+      }
     } catch (err) {
       console.error("Error updating candidate status:", err);
-      handleFirestoreError(err, OperationType.UPDATE, `candidates/${candidateId}`);
     }
   };
 
@@ -184,10 +168,10 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
   const handleDeleteCandidate = async (candidateId: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this candidate record?")) return;
     try {
-      await deleteDoc(doc(db, "candidates", candidateId));
+      await apiDbDeleteCandidate(candidateId);
+      triggerRefresh();
     } catch (err) {
       console.error("Error deleting candidate:", err);
-      handleFirestoreError(err, OperationType.DELETE, `candidates/${candidateId}`);
     }
   };
 

@@ -5,8 +5,7 @@ import {
   BookOpen, Globe, Heart, Shield, Check, RefreshCw, Download, Loader2, Plus, Trash2
 } from "lucide-react";
 import { Candidate, Country, Agency } from "../types";
-import { doc, setDoc } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { apiDbSaveCandidate } from "../lib/api";
 import { generateCandidatePdf } from "../lib/pdfGenerator";
 
 interface CandidateFormProps {
@@ -681,11 +680,7 @@ export default function CandidateForm({
         updatedAt: new Date().toISOString(),
       };
 
-      try {
-        await setDoc(doc(db, "candidates", cId), savedCandidate);
-      } catch (firestoreErr) {
-        handleFirestoreError(firestoreErr, candidate ? OperationType.UPDATE : OperationType.CREATE, `candidates/${cId}`);
-      }
+      await apiDbSaveCandidate(savedCandidate);
       onSuccess();
     } catch (err: any) {
       console.error("Save candidate error:", err);

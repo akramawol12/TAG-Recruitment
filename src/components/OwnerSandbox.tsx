@@ -41,6 +41,27 @@ export default function OwnerSandbox() {
     }
   };
 
+  const handleAction = async (url: string) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(url);
+      if (res.ok) {
+        setActionMessage("Action processed successfully!");
+        setTimeout(() => setActionMessage(null), 3000);
+      } else {
+        const text = await res.text();
+        setActionMessage(`Error: ${text}`);
+        setTimeout(() => setActionMessage(null), 4000);
+      }
+    } catch (err: any) {
+      console.error("Action processing error:", err);
+      setActionMessage(`Network error: ${err.message || err}`);
+      setTimeout(() => setActionMessage(null), 4000);
+    } finally {
+      await fetchNotifications();
+    }
+  };
+
   useEffect(() => {
     fetchNotifications();
     // Poll every 5 seconds to automatically show new registrations
@@ -130,24 +151,20 @@ export default function OwnerSandbox() {
 
                 {notif.status === "pending" && (
                   <div className="mt-4 pt-4 border-t border-slate-900 flex flex-wrap gap-2">
-                    <a
-                      href={notif.approveUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => handleAction(notif.approveUrl)}
                       className="inline-flex items-center gap-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-colors cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      Approve (opens API)
-                    </a>
-                    <a
-                      href={notif.rejectUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      Approve Staff
+                    </button>
+                    <button
+                      onClick={() => handleAction(notif.rejectUrl)}
                       className="inline-flex items-center gap-1 py-1.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded transition-colors cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
-                      Reject (opens API)
-                    </a>
+                      Reject Staff
+                    </button>
                   </div>
                 )}
               </div>

@@ -15,8 +15,16 @@ import {
   where,
   orderBy,
   limit,
-  writeBatch
+  writeBatch,
+  setDoc,
+  deleteDoc
 } from "firebase/firestore";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from "firebase/auth";
 import nodemailer from "nodemailer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
@@ -52,33 +60,8 @@ async function startServer() {
     ? getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId)
     : getFirestore(firebaseApp);
 
-  // 3. Firestore Snapshot Listener to trigger emails (Simulating Cloud Functions)
-  const pendingStaffQuery = query(collection(db, "staff"), where("status", "==", "pending"));
-  onSnapshot(pendingStaffQuery, (snapshot) => {
-    snapshot.docChanges().forEach(async (change) => {
-      // Trigger when added or when status is pending and we haven't sent an email yet
-      if (change.type === "added" || change.type === "modified") {
-        const data = change.doc.data();
-        if (data && data.status === "pending" && !data.emailNotificationSent) {
-          const uid = change.doc.id;
-          try {
-            // Update the document to mark notification as sent (prevents loops)
-            await updateDoc(doc(db, "staff", uid), { 
-              emailNotificationSent: true,
-              sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
-            });
-            
-            console.log(`[Backend Trigger] Sending registration approval request for: ${data.name} (${data.email})`);
-            await sendApprovalEmail(uid, data.name, data.email);
-          } catch (err) {
-            console.error(`Error processing signup notification for ${uid}:`, err);
-          }
-        }
-      }
-    });
-  }, (error) => {
-    console.error("[Backend Trigger] Snapshot listener error on 'staff':", error);
-  });
+  // 3. direct & self-healing notification architecture (no brittle snapshot listener needed)
+  // Notifications are handled directly and safely inside the Auth endpoints on signup, login, and session checks.
 
   // 4. Send Approval Email Function
   async function sendApprovalEmail(uid: string, name: string, email: string) {
@@ -350,6 +333,301 @@ Reject Link: ${rejectUrl}
       });
       await batch.commit();
       res.json({ success: true, message: "Simulated inbox cleared" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // === SERVER-SIDE AUTHENTICATION PROXY ENDPOINTS ===
+
+  // Signup Proxy
+  app.post("/api/auth/signup", async (req, res) => {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "Missing required fields: email, password, name." });
+    }
+    try {
+      const authInstance = getAuth(firebaseApp);
+      const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
+      const user = userCredential.user;
+      
+      const isOwnerEmail = email.trim().toLowerCase() === "tagrecruitmentagency.et@gmail.com";
+      const staffDoc = {
+        name,
+        email,
+        status: isOwnerEmail ? "approved" : "pending",
+        role: isOwnerEmail ? "owner" : "staff",
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Save user profile in Firestore
+      await setDoc(doc(db, "staff", user.uid), staffDoc);
+
+      // Instantly trigger simulated/real notifications on signup
+      if (!isOwnerEmail) {
+        try {
+          console.log(`[Signup Proxy] Instantly sending registration approval request for: ${name} (${email})`);
+          await sendApprovalEmail(user.uid, name, email);
+        } catch (notifErr) {
+          console.error("[Signup Proxy] Failed to trigger approval notification:", notifErr);
+        }
+      }
+      
+      res.json({
+        success: true,
+        user: {
+          uid: user.uid,
+          email: user.email,
+          displayName: name
+        },
+        staff: staffDoc
+      });
+    } catch (err: any) {
+      console.error("[Auth Server Proxy] Signup failed:", err);
+      res.status(400).json({ error: err.message || "Failed to sign up." });
+    }
+  });
+
+  // Login Proxy
+  app.post("/api/auth/login", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Missing required fields: email, password." });
+    }
+    try {
+      const authInstance = getAuth(firebaseApp);
+      const userCredential = await signInWithEmailAndPassword(authInstance, email, password);
+      const user = userCredential.user;
+      
+      const staffRef = doc(db, "staff", user.uid);
+      const staffSnap = await getDoc(staffRef);
+      let staffData = staffSnap.exists() ? staffSnap.data() : null;
+      
+      const isOwnerEmail = email.trim().toLowerCase() === "tagrecruitmentagency.et@gmail.com";
+      
+      if (!staffData) {
+        staffData = {
+          name: user.displayName || email.split("@")[0],
+          email: email,
+          status: isOwnerEmail ? "approved" : "pending",
+          role: isOwnerEmail ? "owner" : "staff",
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(staffRef, staffData);
+      } else if (isOwnerEmail && (staffData.status !== "approved" || staffData.role !== "owner")) {
+        // Force promoter status for owner account
+        const updatedStaff = {
+          ...staffData,
+          status: "approved",
+          role: "owner",
+          sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
+        };
+        await setDoc(staffRef, updatedStaff);
+        staffData = updatedStaff;
+      }
+
+      // Check and auto-heal missing registration notifications
+      if (staffData && staffData.status === "pending") {
+        try {
+          const q = query(
+            collection(db, "admin_notifications"),
+            where("uid", "==", user.uid),
+            where("status", "==", "pending")
+          );
+          const notifications = await getDocs(q);
+          if (notifications.empty) {
+            console.log(`[Login Auto-Healing] Generating missing signup approval notification for: ${staffData.name}`);
+            await sendApprovalEmail(user.uid, staffData.name, staffData.email);
+          }
+        } catch (notifErr) {
+          console.error("[Login Auto-Healing] Failed to check or heal missing notifications:", notifErr);
+        }
+      }
+      
+      res.json({
+        success: true,
+        user: {
+          uid: user.uid,
+          email: user.email,
+          displayName: staffData.name || user.displayName
+        },
+        staff: staffData
+      });
+    } catch (err: any) {
+      console.error("[Auth Server Proxy] Login failed:", err);
+      res.status(400).json({ error: err.message || "Invalid credentials." });
+    }
+  });
+
+  // Session Verification (Me endpoint)
+  app.get("/api/auth/me", async (req, res) => {
+    const uid = req.headers["x-user-uid"];
+    if (!uid || typeof uid !== "string") {
+      return res.json({ authenticated: false });
+    }
+    try {
+      const staffRef = doc(db, "staff", uid);
+      const docSnap = await getDoc(staffRef);
+      if (docSnap.exists()) {
+        const staffData = docSnap.data();
+
+        // Check and auto-heal missing registration notifications on session check
+        if (staffData && staffData.status === "pending") {
+          try {
+            const q = query(
+              collection(db, "admin_notifications"),
+              where("uid", "==", uid),
+              where("status", "==", "pending")
+            );
+            const notifications = await getDocs(q);
+            if (notifications.empty) {
+              console.log(`[Session Auto-Healing] Generating missing signup approval notification for: ${staffData.name} (${uid})`);
+              await sendApprovalEmail(uid, staffData.name, staffData.email);
+            }
+          } catch (notifErr) {
+            console.error("[Session Auto-Healing] Failed to check or heal missing notifications:", notifErr);
+          }
+        }
+
+        res.json({
+          authenticated: true,
+          user: {
+            uid,
+            email: staffData.email,
+            displayName: staffData.name
+          },
+          staff: staffData
+        });
+      } else {
+        res.json({ authenticated: false });
+      }
+    } catch (err) {
+      res.json({ authenticated: false });
+    }
+  });
+
+  // === FIRESTORE DATABASE PROXY ENDPOINTS ===
+
+  // Countries List & Create
+  app.get("/api/db/countries", async (req, res) => {
+    try {
+      const snap = await getDocs(collection(db, "countries"));
+      const list = snap.docs.map(doc => doc.data());
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/countries", async (req, res) => {
+    try {
+      const country = req.body;
+      await setDoc(doc(db, "countries", country.id), country);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Partner Agencies List & Create
+  app.get("/api/db/agencies", async (req, res) => {
+    try {
+      const snap = await getDocs(collection(db, "agencies"));
+      const list = snap.docs.map(doc => doc.data());
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/agencies", async (req, res) => {
+    try {
+      const agency = req.body;
+      await setDoc(doc(db, "agencies", agency.id), agency);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Candidates List, Create/Update, Delete
+  app.get("/api/db/candidates", async (req, res) => {
+    try {
+      const snap = await getDocs(collection(db, "candidates"));
+      const list = snap.docs.map(doc => doc.data());
+      // Sort newest first
+      list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/candidates", async (req, res) => {
+    try {
+      const candidate = req.body;
+      await setDoc(doc(db, "candidates", candidate.id), candidate);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/db/candidates/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await deleteDoc(doc(db, "candidates", id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // WhatsApp dispatch logs
+  app.post("/api/db/whatsapp-sends", async (req, res) => {
+    try {
+      const sendRecord = req.body;
+      await addDoc(collection(db, "whatsappSends"), sendRecord);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Staff Management for Owners
+  app.get("/api/db/staff", async (req, res) => {
+    try {
+      const snap = await getDocs(collection(db, "staff"));
+      const list = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/staff/approve", async (req, res) => {
+    try {
+      const { uid } = req.body;
+      const staffRef = doc(db, "staff", uid);
+      await updateDoc(staffRef, { 
+        status: "approved",
+        sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/staff/reject", async (req, res) => {
+    try {
+      const { uid } = req.body;
+      const staffRef = doc(db, "staff", uid);
+      await updateDoc(staffRef, { 
+        status: "rejected",
+        sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
+      });
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

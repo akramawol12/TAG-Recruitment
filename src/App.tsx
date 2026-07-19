@@ -1,7 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
-import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { StaffMember } from "./types";
 import LoginForm from "./components/LoginForm";
 import SignupForm from "./components/SignupForm";
@@ -10,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import OwnerSandbox from "./components/OwnerSandbox";
 import { motion, AnimatePresence } from "motion/react";
 import { Loader2, ShieldCheck, HelpCircle, Cookie, ExternalLink, X, AlertTriangle } from "lucide-react";
+import { apiAuthMe } from "./lib/api";
 
 function getInitials(name: string): string {
   if (!name) return "ST";
@@ -24,7 +22,6 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [staffData, setStaffData] = useState<StaffMember | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [isStaffLoading, setIsStaffLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
   const [helpOpen, setHelpOpen] = useState(false);
   const [cookiesBlocked, setCookiesBlocked] = useState(false);
@@ -44,111 +41,79 @@ export default function App() {
     }
   }, []);
 
-  // 1. Listen to Firebase Auth state
+  // 1. Session restoration on mount
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setIsAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Listen to Firestore "staff" document changes for the logged-in user
-  useEffect(() => {
-    if (!currentUser) {
-      setStaffData(null);
-      setIsStaffLoading(false);
-      return;
-    }
-
-    setIsStaffLoading(true);
-    
-    // Use onSnapshot for real-time update propagation (e.g. if approved in sandbox, screen automatically unlocks!)
-    const unsubscribe = onSnapshot(
-      doc(db, "staff", currentUser.uid),
-      async (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const isOwnerEmail = currentUser.email?.trim().toLowerCase() === "tagrecruitmentagency.et@gmail.com";
-          
-          if (isOwnerEmail && (data.status !== "approved" || data.role !== "owner")) {
-            console.log("Auto-promoting system owner in database:", currentUser.email);
-            try {
-              await setDoc(doc(db, "staff", currentUser.uid), {
-                name: data.name || currentUser.displayName || "Owner",
-                email: currentUser.email,
-                status: "approved",
-                role: "owner",
-                createdAt: data.createdAt || new Date().toISOString(),
-                sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
-              });
-            } catch (err) {
-              console.error("Failed to auto-promote system owner:", err);
-            }
-          }
-
-          setStaffData({
-            uid: currentUser.uid,
-            ...(data as Omit<StaffMember, "uid">),
-          });
-          setIsStaffLoading(false);
+    const restoreSession = async () => {
+      try {
+        const cachedUser = localStorage.getItem("tag_recruitment_user");
+        const cachedStaff = localStorage.getItem("tag_recruitment_staff");
+        
+        if (cachedUser) {
+          setCurrentUser(JSON.parse(cachedUser));
+        }
+        if (cachedStaff) {
+          setStaffData(JSON.parse(cachedStaff));
+        }
+        
+        // Always verify status on backend
+        const res = await apiAuthMe();
+        if (res && res.authenticated) {
+          setCurrentUser(res.user);
+          setStaffData(res.staff);
+          localStorage.setItem("tag_recruitment_user", JSON.stringify(res.user));
+          localStorage.setItem("tag_recruitment_staff", JSON.stringify(res.staff));
         } else {
-          // Document might not have been created yet or deleted (e.g., if logging in with Google for the first time)
-          console.warn("No staff document found in Firestore for UID:", currentUser.uid);
-          
-          try {
-            const isOwnerEmail = currentUser.email?.trim().toLowerCase() === "tagrecruitmentagency.et@gmail.com";
-            
-            // Create initial pending staff record
-            const staffDoc = {
-              name: currentUser.displayName || currentUser.email?.split("@")[0] || "New Staff",
-              email: currentUser.email || "",
-              status: "pending",
-              role: "staff",
-              createdAt: new Date().toISOString(),
-            };
-            
-            try {
-              await setDoc(doc(db, "staff", currentUser.uid), staffDoc);
-              
-              // If owner email, immediately promote to approved owner via sysCode bypass
-              if (isOwnerEmail) {
-                console.log("Immediately promoting newly created owner account:", currentUser.email);
-                await setDoc(doc(db, "staff", currentUser.uid), {
-                  ...staffDoc,
-                  status: "approved",
-                  role: "owner",
-                  sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
-                });
-              }
-            } catch (firestoreErr) {
-              handleFirestoreError(firestoreErr, OperationType.CREATE, `staff/${currentUser.uid}`);
-            }
-          } catch (e) {
-            console.error("Error creating default staff document on-the-fly:", e);
-            setIsStaffLoading(false);
+          if (!cachedUser) {
+            setCurrentUser(null);
+            setStaffData(null);
           }
         }
-      },
-      (error) => {
-        console.error("Error listening to staff document changes:", error);
-        setIsStaffLoading(false);
+      } catch (err) {
+        console.error("Session restoration error:", err);
+      } finally {
+        setIsAuthLoading(false);
       }
-    );
+    };
+    
+    restoreSession();
+  }, []);
 
-    return () => unsubscribe();
-  }, [currentUser]);
+  // 2. Poll server for pending staff approval to automatically unlock the UI
+  useEffect(() => {
+    if (!currentUser || !staffData || staffData.status !== "pending") return;
+    
+    const checkStatus = async () => {
+      try {
+        const res = await apiAuthMe();
+        if (res && res.authenticated && res.staff) {
+          setStaffData(res.staff);
+          localStorage.setItem("tag_recruitment_staff", JSON.stringify(res.staff));
+        }
+      } catch (err) {
+        console.error("Error checking pending staff status:", err);
+      }
+    };
+    
+    const interval = setInterval(checkStatus, 4000);
+    return () => clearInterval(interval);
+  }, [currentUser, staffData]);
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error("Error logging out:", err);
-    }
+  const handleAuthSuccess = (uid: string, user: any, staff: any) => {
+    setCurrentUser(user);
+    setStaffData(staff);
+    localStorage.setItem("tag_recruitment_user", JSON.stringify(user));
+    localStorage.setItem("tag_recruitment_staff", JSON.stringify(staff));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setStaffData(null);
+    localStorage.removeItem("tag_recruitment_user");
+    localStorage.removeItem("tag_recruitment_staff");
   };
 
   const renderContent = () => {
-    if (isAuthLoading || isStaffLoading) {
+    if (isAuthLoading) {
       return (
         <div className="flex flex-col items-center justify-center p-12">
           <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
@@ -170,7 +135,7 @@ export default function App() {
             >
               <LoginForm
                 onSwitchToSignup={() => setActiveTab("signup")}
-                onLoginSuccess={() => {}}
+                onLoginSuccess={handleAuthSuccess}
               />
             </motion.div>
           ) : (
@@ -183,7 +148,7 @@ export default function App() {
             >
               <SignupForm
                 onSwitchToLogin={() => setActiveTab("login")}
-                onSignupSuccess={() => {}}
+                onSignupSuccess={handleAuthSuccess}
               />
             </motion.div>
           )}

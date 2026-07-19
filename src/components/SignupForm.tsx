@@ -1,13 +1,11 @@
 import React, { useState } from "react";
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
-import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { motion } from "motion/react";
 import { UserPlus, Mail, Lock, User, Loader2, AlertCircle, ShieldAlert, ExternalLink, Globe } from "lucide-react";
+import { apiAuthSignup } from "../lib/api";
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
-  onSignupSuccess: (uid: string) => void;
+  onSignupSuccess: (uid: string, user: any, staff: any) => void;
 }
 
 export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupFormProps) {
@@ -15,10 +13,7 @@ export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupF
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAuthHint, setShowAuthHint] = useState(false);
-  const [showDomainHint, setShowDomainHint] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,83 +28,18 @@ export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupF
 
     setIsLoading(true);
     setError(null);
-    setShowAuthHint(false);
-    setShowDomainHint(false);
 
     try {
-      // 1. Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = userCredential.user.uid;
-
-      // 2. Create document in Firestore "staff" collection
-      const staffDoc = {
-        name: name.trim(),
-        email: email.trim(),
-        status: "pending",
-        role: "staff",
-        createdAt: new Date().toISOString(),
-      };
-
-      try {
-        await setDoc(doc(db, "staff", uid), staffDoc);
-        
-        // If owner email, immediately promote to approved owner via sysCode bypass
-        const isOwnerEmail = email.trim().toLowerCase() === "tagrecruitmentagency.et@gmail.com";
-        if (isOwnerEmail) {
-          console.log("Immediately promoting newly signed-up owner account:", email);
-          await setDoc(doc(db, "staff", uid), {
-            ...staffDoc,
-            status: "approved",
-            role: "owner",
-            sysCode: "TAG_RECRUITMENT_SECURE_BYPASS"
-          });
-        }
-      } catch (firestoreErr) {
-        handleFirestoreError(firestoreErr, OperationType.CREATE, `staff/${uid}`);
-      }
-
-      // 3. Callback to show pending status
-      onSignupSuccess(uid);
+      // 1. Call server-side signup proxy
+      const res = await apiAuthSignup(email, password, name);
+      
+      // 2. Callback to App component
+      onSignupSuccess(res.user.uid, res.user, res.staff);
     } catch (err: any) {
-      console.error("Signup error:", err);
-      if (err.code === "auth/operation-not-allowed") {
-        setError("Email/Password Authentication is not yet enabled in your Firebase console. Please use Google Sign-In below, or enable Email/Password provider in your Firebase project.");
-        setShowAuthHint(true);
-      } else if (err.code === "auth/unauthorized-domain") {
-        setError("Firebase Authentication error: Unauthorized Domain. This domain is not authorized in your Firebase console.");
-        setShowDomainHint(true);
-      } else if (err.code === "auth/email-already-in-use") {
-        setError("This email address is already registered.");
-      } else if (err.code === "auth/invalid-email") {
-        setError("Please enter a valid email address.");
-      } else if (err.code === "auth/weak-password") {
-        setError("Password is too weak.");
-      } else {
-        setError(err.message || "An unexpected error occurred during signup.");
-      }
+      console.error("Signup error via proxy:", err);
+      setError(err.message || "An unexpected error occurred during signup.");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSignup = async () => {
-    setIsGoogleLoading(true);
-    setError(null);
-    setShowDomainHint(false);
-    try {
-      const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      onSignupSuccess(userCredential.user.uid);
-    } catch (err: any) {
-      console.error("Google sign-up error:", err);
-      if (err.code === "auth/unauthorized-domain" || (err.message && err.message.includes("unauthorized-domain"))) {
-        setError("Google Sign-In is blocked because this domain is unauthorized in your Firebase Console.");
-        setShowDomainHint(true);
-      } else {
-        setError(err.message || "An error occurred during Google sign-up.");
-      }
-    } finally {
-      setIsGoogleLoading(false);
     }
   };
 
@@ -136,66 +66,6 @@ export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupF
         <div className="mb-4 flex items-start gap-3 bg-rose-50 text-rose-600 p-3.5 rounded-xl text-sm border border-rose-100 animate-shake">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <span className="break-words">{error}</span>
-        </div>
-      )}
-
-      {showDomainHint && (
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed flex items-start gap-3 animate-shake" id="signup-domain-hint">
-          <ShieldAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-bold mb-1.5 text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1">
-              <Globe className="w-3.5 h-3.5 text-amber-700" />
-              Firebase Setup Action Required
-            </p>
-            <p className="mb-2 text-amber-900">
-              Your Firebase project does not trust this hosting domain. To fix this:
-            </p>
-            <ol className="list-decimal list-inside space-y-1.5 font-semibold text-amber-950 mb-3 bg-amber-100/50 p-2.5 rounded-lg border border-amber-200/30">
-              <li>Open your <a href="https://console.firebase.google.com/project/gen-lang-client-0248427318/authentication/providers" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-800">Firebase Console</a></li>
-              <li>Go to <strong>Authentication &rarr; Settings &rarr; Authorized domains</strong></li>
-              <li>Click <strong>"Add domain"</strong></li>
-              <li>Paste this exact domain: <code className="bg-white px-1.5 py-0.5 border border-amber-300 rounded text-rose-700 select-all font-mono break-all">{window.location.hostname}</code></li>
-            </ol>
-            <div className="flex flex-wrap gap-2.5">
-              <a
-                href="https://console.firebase.google.com/project/gen-lang-client-0248427318/authentication/providers"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold px-3 py-1.5 rounded-lg border border-amber-300 shadow-sm transition-all"
-              >
-                Go to Firebase Settings <ExternalLink className="w-3 h-3" />
-              </a>
-              <a
-                href={window.location.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 bg-white hover:bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-all"
-              >
-                Open in New Tab <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showAuthHint && (
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed flex items-start gap-3" id="signup-auth-hint">
-          <ShieldAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold mb-1 text-amber-900">Firebase Setup Required:</p>
-            <p className="mb-2">
-              Email/Password provider is not enabled in this Firebase project yet. To enable it:
-            </p>
-            <ol className="list-decimal list-inside space-y-1 font-semibold text-amber-900">
-              <li>Open your Firebase Console</li>
-              <li>Go to Build &rarr; Authentication &rarr; Sign-in method</li>
-              <li>Click "Add new provider" and select "Email/Password"</li>
-              <li>Toggle "Enable" and click "Save"</li>
-            </ol>
-            <p className="mt-2 text-amber-900">
-              Or bypass this by clicking <strong>Continue with Google</strong> below!
-            </p>
-          </div>
         </div>
       )}
 
@@ -253,7 +123,7 @@ export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupF
 
         <button
           type="submit"
-          disabled={isLoading || isGoogleLoading}
+          disabled={isLoading}
           className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 cursor-pointer"
           id="btn-signup-submit"
         >
@@ -267,26 +137,6 @@ export default function SignupForm({ onSwitchToLogin, onSignupSuccess }: SignupF
           )}
         </button>
       </form>
-
-      <div className="relative my-6 flex items-center justify-center">
-        <div className="absolute inset-x-0 h-px bg-slate-100"></div>
-        <span className="relative bg-white px-3 text-xs text-slate-400 font-bold uppercase tracking-wider">Or</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={handleGoogleSignup}
-        disabled={isGoogleLoading || isLoading}
-        className="w-full py-3 px-4 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-        id="btn-google-signup"
-      >
-        {isGoogleLoading ? (
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-        ) : (
-          <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
-        )}
-        <span>Continue with Google</span>
-      </button>
 
       <div className="mt-6 pt-6 border-t border-slate-100 text-center">
         <p className="text-sm text-slate-600">
