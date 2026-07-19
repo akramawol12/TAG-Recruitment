@@ -182,6 +182,13 @@ export default function App() {
           status="pending"
           userName={staffData.name}
           onLogout={handleLogout}
+          onRefreshStatus={async () => {
+            const res = await apiAuthMe();
+            if (res && res.authenticated && res.staff) {
+              setStaffData(res.staff);
+              localStorage.setItem("tag_recruitment_staff", JSON.stringify(res.staff));
+            }
+          }}
         />
       );
     }
@@ -192,6 +199,13 @@ export default function App() {
           status="rejected"
           userName={staffData.name}
           onLogout={handleLogout}
+          onRefreshStatus={async () => {
+            const res = await apiAuthMe();
+            if (res && res.authenticated && res.staff) {
+              setStaffData(res.staff);
+              localStorage.setItem("tag_recruitment_staff", JSON.stringify(res.staff));
+            }
+          }}
         />
       );
     }
