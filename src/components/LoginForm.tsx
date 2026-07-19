@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { motion } from "motion/react";
-import { LogIn, Mail, Lock, Loader2, AlertCircle, ShieldAlert } from "lucide-react";
+import { LogIn, Mail, Lock, Loader2, AlertCircle, ShieldAlert, ExternalLink, Globe } from "lucide-react";
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -16,6 +16,7 @@ export default function LoginForm({ onSwitchToSignup, onLoginSuccess }: LoginFor
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAuthHint, setShowAuthHint] = useState(false);
+  const [showDomainHint, setShowDomainHint] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +28,7 @@ export default function LoginForm({ onSwitchToSignup, onLoginSuccess }: LoginFor
     setIsLoading(true);
     setError(null);
     setShowAuthHint(false);
+    setShowDomainHint(false);
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -36,6 +38,9 @@ export default function LoginForm({ onSwitchToSignup, onLoginSuccess }: LoginFor
       if (err.code === "auth/operation-not-allowed") {
         setError("Email/Password Authentication is not yet enabled in your Firebase console. Please use Google Sign-In below, or enable Email/Password provider in your Firebase project.");
         setShowAuthHint(true);
+      } else if (err.code === "auth/unauthorized-domain") {
+        setError("Firebase Authentication error: Unauthorized Domain. This domain is not authorized in your Firebase console.");
+        setShowDomainHint(true);
       } else if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
         setError("Invalid email address or password.");
       } else {
@@ -49,13 +54,19 @@ export default function LoginForm({ onSwitchToSignup, onLoginSuccess }: LoginFor
   const handleGoogleLogin = async () => {
     setIsGoogleLoading(true);
     setError(null);
+    setShowDomainHint(false);
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
       onLoginSuccess(userCredential.user.uid);
     } catch (err: any) {
       console.error("Google sign-in error:", err);
-      setError(err.message || "An error occurred during Google sign-in.");
+      if (err.code === "auth/unauthorized-domain" || (err.message && err.message.includes("unauthorized-domain"))) {
+        setError("Google Sign-In is blocked because this domain is unauthorized in your Firebase Console.");
+        setShowDomainHint(true);
+      } else {
+        setError(err.message || "An error occurred during Google sign-in.");
+      }
     } finally {
       setIsGoogleLoading(false);
     }
@@ -83,7 +94,46 @@ export default function LoginForm({ onSwitchToSignup, onLoginSuccess }: LoginFor
       {error && (
         <div className="mb-4 flex items-start gap-3 bg-rose-50 text-rose-600 p-3.5 rounded-xl text-sm border border-rose-100" id="login-error">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+          <span className="break-words">{error}</span>
+        </div>
+      )}
+
+      {showDomainHint && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed flex items-start gap-3 animate-shake" id="login-domain-hint">
+          <ShieldAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold mb-1.5 text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5 text-amber-700" />
+              Firebase Setup Action Required
+            </p>
+            <p className="mb-2 text-amber-900">
+              Your Firebase project does not trust this hosting domain. To fix this:
+            </p>
+            <ol className="list-decimal list-inside space-y-1.5 font-semibold text-amber-950 mb-3 bg-amber-100/50 p-2.5 rounded-lg border border-amber-200/30">
+              <li>Open your <a href="https://console.firebase.google.com/project/gen-lang-client-0248427318/authentication/providers" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-800">Firebase Console</a></li>
+              <li>Go to <strong>Authentication &rarr; Settings &rarr; Authorized domains</strong></li>
+              <li>Click <strong>"Add domain"</strong></li>
+              <li>Paste this exact domain: <code className="bg-white px-1.5 py-0.5 border border-amber-300 rounded text-rose-700 select-all font-mono break-all">{window.location.hostname}</code></li>
+            </ol>
+            <div className="flex flex-wrap gap-2.5">
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0248427318/authentication/providers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold px-3 py-1.5 rounded-lg border border-amber-300 shadow-sm transition-all"
+              >
+                Go to Firebase Settings <ExternalLink className="w-3 h-3" />
+              </a>
+              <a
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 bg-white hover:bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-all"
+              >
+                Open in New Tab <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
         </div>
       )}
 
