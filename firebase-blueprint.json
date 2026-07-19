@@ -1,0 +1,402 @@
+{
+  "entities": {
+    "staff": {
+      "title": "Staff Member",
+      "description": "Represents an internal staff member of the recruitment agency",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Full name of the staff member"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Email address of the staff member"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Approval status of the staff member"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["staff", "admin", "owner"],
+          "description": "System role of the staff member"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp of when the account was registered"
+        }
+      },
+      "required": ["name", "email", "status", "role", "createdAt"]
+    },
+    "admin_notification": {
+      "title": "Admin Notification",
+      "description": "Represents an approval request notification logged for the owner",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the registered staff member"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Full name of the registered staff"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Email of the registered staff"
+        },
+        "approveUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "The URL to approve the staff member registration"
+        },
+        "rejectUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "The URL to reject the staff member registration"
+        },
+        "sentTo": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "The target email address of the notification"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp of when the notification was created"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Status of the notification"
+        }
+      },
+      "required": ["uid", "name", "email", "approveUrl", "rejectUrl", "sentTo", "createdAt", "status"]
+    },
+    "agency": {
+      "title": "Partner Agency",
+      "description": "Represents a partner overseas recruitment office",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Unique identifier of the partner agency"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Full name of the agency"
+        },
+        "nameArabic": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Arabic translation of the agency name"
+        },
+        "country": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Country where the agency operates"
+        },
+        "contactPerson": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Contact person name"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Contact phone number"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Contact email address"
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Logo image URL of the agency"
+        }
+      },
+      "required": ["id", "name", "country", "contactPerson", "phone", "email"]
+    },
+    "country": {
+      "title": "Destination Country",
+      "description": "Represents a deployment destination country",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Unique identifier of the country"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Name of the country"
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 10,
+          "description": "Local currency code"
+        },
+        "partnerAgencyId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "The partner agency ID operating in this country"
+        }
+      },
+      "required": ["id", "name", "currency", "partnerAgencyId"]
+    },
+    "candidate": {
+      "title": "Job Candidate",
+      "description": "Represents a recruitment applicant with CV credentials",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Unique candidate identifier"
+        },
+        "refNo": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Work reference number (e.g., WRK-XXXXXX)"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Candidate full name"
+        },
+        "position": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Job position being applied for"
+        },
+        "nationality": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Nationality"
+        },
+        "religion": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Religion"
+        },
+        "dob": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Date of Birth"
+        },
+        "birthPlace": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Place of Birth"
+        },
+        "age": {
+          "type": "number",
+          "description": "Age of candidate"
+        },
+        "maritalStatus": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Marital Status"
+        },
+        "numChildren": {
+          "type": "number",
+          "description": "Number of children"
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "Weight in kilograms"
+        },
+        "heightCm": {
+          "type": "number",
+          "description": "Height in centimeters"
+        },
+        "education": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Educational Level"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Candidate phone number"
+        },
+        "passportNo": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Passport Number"
+        },
+        "passportIssueDate": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Passport Issue Date"
+        },
+        "passportExpiryDate": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Passport Expiry Date"
+        },
+        "languages": {
+          "type": "object",
+          "description": "Knowledge of languages map"
+        },
+        "workExperience": {
+          "type": "object",
+          "description": "Prior work experience details"
+        },
+        "skills": {
+          "type": "object",
+          "description": "Household competence indicators"
+        },
+        "countryId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Destination country reference ID"
+        },
+        "salary": {
+          "type": "number",
+          "description": "Monthly salary offered"
+        },
+        "contractPeriod": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Contract period"
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 2000000,
+          "description": "Headshot / vertical image URL"
+        },
+        "fullBodyPhotoUrl": {
+          "type": "string",
+          "maxLength": 2000000,
+          "description": "Full-body portrait image URL"
+        },
+        "passportScanUrl": {
+          "type": "string",
+          "maxLength": 2000000,
+          "description": "Passport scan image URL"
+        },
+        "cocCertUrl": {
+          "type": "string",
+          "maxLength": 2000000,
+          "description": "COC certificate image URL"
+        },
+        "videoUrl": {
+          "type": "string",
+          "maxLength": 2000000,
+          "description": "Self-introduction video URL"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "placed", "withdrawn"],
+          "description": "Current deployment status of candidate"
+        },
+        "createdBy": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Staff member UID who added the candidate"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp of when the candidate was added"
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": [
+        "id", "refNo", "name", "position", "nationality", "religion", "dob", 
+        "birthPlace", "age", "maritalStatus", "numChildren", "weightKg", 
+        "heightCm", "education", "phone", "passportNo", "passportIssueDate", 
+        "passportExpiryDate", "languages", "workExperience", "skills", 
+        "countryId", "salary", "contractPeriod", "photoUrl", "passportScanUrl", 
+        "status", "createdBy", "createdAt", "updatedAt"
+      ]
+    },
+    "whatsapp_send": {
+      "title": "WhatsApp CV Send Log",
+      "description": "Represents a logged dispatch of a candidate CV to WhatsApp",
+      "type": "object",
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Target candidate ID"
+        },
+        "candidateName": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Name of the target candidate"
+        },
+        "groupId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Simulated WhatsApp group or recipient ID"
+        },
+        "groupName": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Name of the target group or recipient"
+        },
+        "sentBy": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Staff member name who sent the CV"
+        },
+        "sentAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "ISO timestamp of dispatch"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "failed"],
+          "description": "Dispatch status"
+        }
+      },
+      "required": ["candidateId", "candidateName", "groupId", "groupName", "sentBy", "sentAt", "status"]
+    }
+  },
+  "firestore": {
+    "/staff/{uid}": {
+      "schema": "staff",
+      "description": "Collection of staff members indexed by their Firebase Auth UID"
+    },
+    "/admin_notifications/{id}": {
+      "schema": "admin_notification",
+      "description": "Simulated admin signup notifications for registration approvals"
+    },
+    "/agencies/{agencyId}": {
+      "schema": "agency",
+      "description": "Destination agency partners metadata"
+    },
+    "/countries/{countryId}": {
+      "schema": "country",
+      "description": "Supported deployment countries meta data"
+    },
+    "/candidates/{candidateId}": {
+      "schema": "candidate",
+      "description": "Standardized Candidate Profiles and CVs"
+    },
+    "/whatsappSends/{sendId}": {
+      "schema": "whatsapp_send",
+      "description": "Audit trails of WhatsApp CV dispatches"
+    }
+  }
+}

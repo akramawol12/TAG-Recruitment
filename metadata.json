@@ -1,0 +1,6 @@
+{
+  "name": "Overseas Recruitment Portal",
+  "description": "Agency portal for standardized CV generation, staff signups, owner approvals, and video profile sharing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

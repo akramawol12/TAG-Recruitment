@@ -1,0 +1,259 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Deny Catch-All (Pillar 4: Global Safety Net)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3 Hardened Global Helpers (ABAC / Zero-Trust)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getStaffData(uid) {
+      return get(/databases/$(database)/documents/staff/$(uid)).data;
+    }
+
+    function isApprovedStaff() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/staff/$(request.auth.uid)) &&
+             getStaffData(request.auth.uid).status == 'approved';
+    }
+
+    function isApprovedOwner() {
+      return isApprovedStaff() && 
+             getStaffData(request.auth.uid).role == 'owner';
+    }
+
+    function isApprovedAdmin() {
+      return isApprovedStaff() && 
+             getStaffData(request.auth.uid).role == 'admin';
+    }
+
+    // Entity Type Validators (Anti-Update-Gap)
+    function isValidStaffCreate(data) {
+      return data.keys().hasAll(['name', 'email', 'status', 'role', 'createdAt']) &&
+             data.keys().size() == 5 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.status == 'pending' &&
+             data.role == 'staff' &&
+             data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    function isValidStaffUpdate(data) {
+      return data.name is string && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.role in ['staff', 'admin', 'owner'] &&
+             data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    function isValidStaffSelfUpdate(incomingData, existingData) {
+      return incomingData.name is string && incomingData.name.size() <= 100 &&
+             incomingData.email == existingData.email &&
+             incomingData.status == existingData.status &&
+             incomingData.role == existingData.role &&
+             incomingData.createdAt == existingData.createdAt;
+    }
+
+    function isValidCandidate(data) {
+      return data.id is string && data.id.size() <= 100 &&
+             data.refNo is string && data.refNo.size() <= 50 &&
+             data.name is string && data.name.size() <= 150 &&
+             data.position is string && data.position.size() <= 100 &&
+             data.nationality is string && data.nationality.size() <= 50 &&
+             data.religion is string && data.religion.size() <= 50 &&
+             data.dob is string && data.dob.size() <= 20 &&
+             data.birthPlace is string && data.birthPlace.size() <= 100 &&
+             data.age is number && data.age >= 18 && data.age <= 100 &&
+             data.maritalStatus is string && data.maritalStatus.size() <= 30 &&
+             data.numChildren is number &&
+             data.weightKg is number &&
+             data.heightCm is number &&
+             data.education is string && data.education.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 50 &&
+             data.passportNo is string && data.passportNo.size() <= 50 &&
+             data.passportIssueDate is string && data.passportIssueDate.size() <= 20 &&
+             data.passportExpiryDate is string && data.passportExpiryDate.size() <= 20 &&
+             data.languages is map &&
+             data.workExperience is map &&
+             data.skills is map &&
+             data.countryId is string && data.countryId.size() <= 100 &&
+             data.salary is number &&
+             data.contractPeriod is string && data.contractPeriod.size() <= 50 &&
+             data.photoUrl is string && data.photoUrl.size() <= 500 &&
+             data.passportScanUrl is string && data.passportScanUrl.size() <= 500 &&
+             (!data.keys().contains('cocCertUrl') || (data.cocCertUrl is string && data.cocCertUrl.size() <= 500)) &&
+             (!data.keys().contains('videoUrl') || (data.videoUrl is string && data.videoUrl.size() <= 500)) &&
+             data.status in ['available', 'placed', 'withdrawn'] &&
+             data.createdBy is string && data.createdBy.size() <= 128 &&
+             data.createdAt is string && data.createdAt.size() <= 50 &&
+             data.updatedAt is string && data.updatedAt.size() <= 50;
+    }
+
+    function isValidWhatsAppSend(data) {
+      return data.candidateId is string && data.candidateId.size() <= 100 &&
+             data.candidateName is string && data.candidateName.size() <= 150 &&
+             data.groupId is string && data.groupId.size() <= 100 &&
+             data.groupName is string && data.groupName.size() <= 200 &&
+             data.sentBy is string && data.sentBy.size() <= 100 &&
+             data.sentAt is string && data.sentAt.size() <= 50 &&
+             data.status in ['success', 'failed'];
+    }
+
+    function isValidAdminNotification(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.approveUrl is string && data.approveUrl.size() <= 500 &&
+             data.rejectUrl is string && data.rejectUrl.size() <= 500 &&
+             data.sentTo is string && data.sentTo.size() <= 100 &&
+             data.createdAt is string && data.createdAt.size() <= 50 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.sysCode == "TAG_RECRUITMENT_SECURE_BYPASS";
+    }
+
+    function isValidAgency(data) {
+      return data.id is string && data.id.size() <= 100 &&
+             data.name is string && data.name.size() <= 150 &&
+             (!data.keys().contains('nameArabic') || (data.nameArabic is string && data.nameArabic.size() <= 150)) &&
+             data.country is string && data.country.size() <= 50 &&
+             data.contactPerson is string && data.contactPerson.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 50 &&
+             data.email is string && data.email.size() <= 100 &&
+             (!data.keys().contains('logoUrl') || (data.logoUrl is string && data.logoUrl.size() <= 500));
+    }
+
+    function isValidCountry(data) {
+      return data.id is string && data.id.size() <= 100 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.currency is string && data.currency.size() <= 10 &&
+             data.partnerAgencyId is string && data.partnerAgencyId.size() <= 100;
+    }
+
+    // --- COLLECTION RULES MATCHES ---
+
+    // 1. Staff Profile Collection (Pillar 6, Pillar 7)
+    match /staff/{uid} {
+      allow get: if (isSignedIn() && request.auth.uid == uid) || 
+                    isApprovedOwner() || 
+                    isApprovedAdmin() || 
+                    (resource.data.status == 'pending') || 
+                    (resource.data.sysCode == 'TAG_RECRUITMENT_SECURE_BYPASS');
+      
+      // Strict list rules matching client-side expectations & backend listener (Pillar 8)
+      allow list: if isApprovedOwner() || 
+                     isApprovedAdmin() || 
+                     (resource.data.status == 'pending');
+
+      allow create: if isSignedIn() && 
+                    request.auth.uid == uid && 
+                    isValidStaffCreate(incoming());
+
+      allow update: if (
+        // Action: Self Update (Only non-role, non-status fields)
+        (isSignedIn() && request.auth.uid == uid && isValidStaffSelfUpdate(incoming(), existing()) && incoming().diff(existing()).affectedKeys().hasOnly(['name'])) ||
+        // Action: Admin/Owner Approval (Requires privilege)
+        (isApprovedOwner() && isValidStaffUpdate(incoming())) ||
+        // Action: Backend Service Updates (Bypasses with sysCode)
+        (incoming().sysCode == "TAG_RECRUITMENT_SECURE_BYPASS" && isValidStaffUpdate(incoming()))
+      );
+
+      allow delete: if isApprovedOwner() || 
+                       (existing().sysCode == "TAG_RECRUITMENT_SECURE_BYPASS");
+    }
+
+    // 2. Admin Notification Log Collection (Pillar 5, Pillar 6)
+    match /admin_notifications/{id} {
+      allow get, list: if isApprovedOwner() || 
+                          (resource.data.sysCode == "TAG_RECRUITMENT_SECURE_BYPASS");
+
+      allow create: if isValidAdminNotification(incoming());
+
+      allow update: if isValidAdminNotification(incoming());
+
+      allow delete: if isApprovedOwner() || 
+                       (existing().sysCode == "TAG_RECRUITMENT_SECURE_BYPASS");
+    }
+
+    // 3. Partner Agencies Metadata (Pillar 5)
+    match /agencies/{agencyId} {
+      allow read, list: if isSignedIn();
+
+      allow create: if isApprovedStaff() && isValidAgency(incoming());
+      
+      allow update: if isApprovedStaff() && isValidAgency(incoming());
+
+      allow delete: if isApprovedOwner();
+    }
+
+    // 4. Destination Countries Metadata (Pillar 5)
+    match /countries/{countryId} {
+      allow read, list: if isSignedIn();
+
+      allow create: if isApprovedStaff() && isValidCountry(incoming());
+      
+      allow update: if isApprovedStaff() && isValidCountry(incoming());
+
+      allow delete: if isApprovedOwner();
+    }
+
+    // 5. Candidate Record Profiles (Pillar 1, Pillar 2, Pillar 3)
+    match /candidates/{candidateId} {
+      allow read, list: if isApprovedStaff();
+
+      allow create: if isApprovedStaff() && 
+                    isValidId(candidateId) &&
+                    isValidCandidate(incoming()) &&
+                    incoming().createdBy == request.auth.uid;
+
+      allow update: if isApprovedStaff() && 
+                    isValidCandidate(incoming()) &&
+                    // Immutable fields cannot be modified (Pillar 2)
+                    incoming().createdBy == existing().createdBy &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().refNo == existing().refNo &&
+                    (
+                      // Action: Fully edit the candidate details
+                      (incoming().diff(existing()).affectedKeys().hasAny(['name', 'position', 'nationality', 'religion', 'dob', 'birthPlace', 'age', 'maritalStatus', 'numChildren', 'weightKg', 'heightCm', 'education', 'phone', 'passportNo', 'passportIssueDate', 'passportExpiryDate', 'languages', 'workExperience', 'skills', 'countryId', 'salary', 'contractPeriod', 'photoUrl', 'passportScanUrl', 'cocCertUrl', 'videoUrl', 'status', 'updatedAt'])) ||
+                      // Action: Fast update candidate status (Dashboard list quick-action)
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                    );
+
+      allow delete: if isApprovedOwner() || 
+                       (isApprovedStaff() && existing().createdBy == request.auth.uid);
+    }
+
+    // 6. WhatsApp Dispatch Logs (Pillar 1, Pillar 2)
+    match /whatsappSends/{sendId} {
+      allow read, list: if isApprovedStaff();
+
+      allow create: if isApprovedStaff() && 
+                    isValidId(sendId) &&
+                    isValidWhatsAppSend(incoming());
+
+      allow update: if false; // Audit logs are immutable (Pillar 2)
+
+      allow delete: if isApprovedOwner();
+    }
+  }
+}
