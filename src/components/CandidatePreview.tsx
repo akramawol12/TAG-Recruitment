@@ -319,7 +319,11 @@ export default function CandidatePreview({
           scale: 2, 
           useCORS: true,
           letterRendering: true,
-          logging: false
+          logging: false,
+          // foreignObjectRendering lets the browser's own engine draw the page
+          // (instead of html2canvas manually redrawing each glyph), which is
+          // required for Arabic/RTL text to render correctly in the exported PDF.
+          foreignObjectRendering: true
         },
         jsPDF:        { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak:    { mode: ["css", "legacy"] }
