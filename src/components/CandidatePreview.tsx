@@ -6,263 +6,7 @@ import {
 import { Candidate, Country, Agency } from "../types";
 import { getBilingualValue, getChildrenBilingual } from "../lib/translate";
 import { apiDbLogWhatsAppSend } from "../lib/api";
-// @ts-ignore
-import html2pdf from "html2pdf.js";
-
-// Helper function to convert OKLAB color to sRGB string
-function oklabToRgbString(L: number, a: number, b: number, alphaStr: string = "1"): string {
-  // OKLAB to LMS
-  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
-  
-  // LMS to linear sRGB (applying power of 3)
-  const l3 = l_ * l_ * l_;
-  const m3 = m_ * m_ * m_;
-  const s3 = s_ * s_ * s_;
-  
-  const rLin = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-  const gLin = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-  const bLin = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
-  
-  // Linear sRGB to sRGB
-  const toSRGB = (c: number) => {
-    if (c <= 0.0031308) {
-      return 12.92 * c;
-    } else {
-      return 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-    }
-  };
-  
-  const rVal = Math.max(0, Math.min(255, Math.round(toSRGB(rLin) * 255)));
-  const gVal = Math.max(0, Math.min(255, Math.round(toSRGB(gLin) * 255)));
-  const bVal = Math.max(0, Math.min(255, Math.round(toSRGB(bLin) * 255)));
-  
-  if (alphaStr === "1") {
-    return `rgb(${rVal}, ${gVal}, ${bVal})`;
-  } else {
-    return `rgba(${rVal}, ${gVal}, ${bVal}, ${alphaStr})`;
-  }
-}
-
-// Helper function to convert OKLCH color to sRGB string
-function oklchToRgbString(L: number, C: number, H: number, alphaStr: string = "1"): string {
-  // Convert hue to radians
-  const hRad = (H * Math.PI) / 180;
-  
-  // OKLCH to OKLAB
-  const oklabA = C * Math.cos(hRad);
-  const oklabB = C * Math.sin(hRad);
-  
-  return oklabToRgbString(L, oklabA, oklabB, alphaStr);
-}
-
-// Replaces oklch(...) and oklab(...) occurrences inside CSS with standard rgb/rgba, handling nested parentheses correctly
-function replaceOklchInCss(cssText: string): string {
-  let result = "";
-  let i = 0;
-  const len = cssText.length;
-
-  while (i < len) {
-    const isOklch = cssText.substring(i, i + 6) === "oklch(";
-    const isOklab = cssText.substring(i, i + 6) === "oklab(";
-
-    if (isOklch || isOklab) {
-      const startOfName = i;
-      const startOfInside = i + 6;
-      let depth = 1;
-      let j = startOfInside;
-
-      while (j < len && depth > 0) {
-        const char = cssText[j];
-        if (char === "(") {
-          depth++;
-        } else if (char === ")") {
-          depth--;
-        }
-        j++;
-      }
-
-      if (depth === 0) {
-        // Found matching outer parenthesis
-        const inside = cssText.substring(startOfInside, j - 1);
-        const fullMatch = cssText.substring(startOfName, j);
-
-        try {
-          const slashIndex = inside.indexOf("/");
-          let colorPart = inside;
-          let alphaStr = "1";
-
-          if (slashIndex !== -1) {
-            colorPart = inside.substring(0, slashIndex).trim();
-            alphaStr = inside.substring(slashIndex + 1).trim();
-          }
-
-          const colorClean = colorPart.replace(/,/g, " ").trim().replace(/\s+/g, " ");
-          const parts = colorClean.split(" ");
-
-          if (parts.length >= 3) {
-            let lVal = parts[0];
-            let l = 0;
-            if (lVal.endsWith("%")) {
-              l = parseFloat(lVal) / 100;
-            } else {
-              l = parseFloat(lVal);
-            }
-
-            if (isOklch) {
-              let c = parseFloat(parts[1]);
-              let hVal = parts[2];
-              let h = 0;
-              if (hVal.endsWith("deg")) {
-                h = parseFloat(hVal);
-              } else if (hVal.endsWith("rad")) {
-                h = (parseFloat(hVal) * 180) / Math.PI;
-              } else if (hVal.endsWith("turn")) {
-                h = parseFloat(hVal) * 360;
-              } else {
-                h = parseFloat(hVal);
-              }
-
-              if (!isNaN(l) && !isNaN(c) && !isNaN(h)) {
-                result += oklchToRgbString(l, c, h, alphaStr);
-              } else {
-                result += fullMatch;
-              }
-            } else {
-              // oklab
-              let a = parseFloat(parts[1]);
-              let b = parseFloat(parts[2]);
-
-              if (!isNaN(l) && !isNaN(a) && !isNaN(b)) {
-                result += oklabToRgbString(l, a, b, alphaStr);
-              } else {
-                result += fullMatch;
-              }
-            }
-          } else {
-            result += fullMatch;
-          }
-        } catch (e) {
-          console.warn("Failed parsing oklch/oklab inside:", inside, e);
-          result += fullMatch;
-        }
-
-        i = j;
-      } else {
-        result += cssText[i];
-        i++;
-      }
-    } else {
-      result += cssText[i];
-      i++;
-    }
-  }
-
-  return result;
-}
-
-// Bypasses the HTML2Canvas crash by replacing OKLCH and OKLAB variables in stylesheets with readable color values
-async function replaceOklchColorsForPdfAsync() {
-  const originalStyles: { element: HTMLStyleElement | HTMLLinkElement; originalDisabled: boolean }[] = [];
-  const tempStyles: HTMLStyleElement[] = [];
-
-  const originalInlineStyles: { element: HTMLElement; styleAttr: string }[] = [];
-  const printableContainer = document.getElementById("cv-printable-sheet");
-  if (printableContainer) {
-    const styledElements = printableContainer.querySelectorAll("[style]");
-    styledElements.forEach((node) => {
-      const el = node as HTMLElement;
-      const styleAttr = el.getAttribute("style");
-      if (styleAttr && (styleAttr.includes("oklch") || styleAttr.includes("oklab"))) {
-        originalInlineStyles.push({ element: el, styleAttr });
-        el.setAttribute("style", replaceOklchInCss(styleAttr));
-      }
-    });
-  }
-
-  // 1. Process style tags
-  const styleElements = Array.from(document.querySelectorAll("style"));
-  for (const el of styleElements) {
-    if (el.textContent && (el.textContent.includes("oklch") || el.textContent.includes("oklab"))) {
-      const sanitized = replaceOklchInCss(el.textContent);
-      const tempStyle = document.createElement("style");
-      tempStyle.textContent = sanitized;
-      document.head.appendChild(tempStyle);
-      tempStyles.push(tempStyle);
-
-      let originalDisabled = false;
-      if (el.sheet) {
-        originalDisabled = el.sheet.disabled;
-        el.sheet.disabled = true;
-      } else {
-        const media = el.getAttribute("media") || "";
-        el.setAttribute("data-original-media", media);
-        el.setAttribute("media", "only x");
-      }
-      originalStyles.push({ element: el, originalDisabled });
-    }
-  }
-
-  // 2. Process link tags
-  const linkElements = Array.from(document.querySelectorAll("link[rel='stylesheet']")) as HTMLLinkElement[];
-  const fetchPromises = linkElements.map(async (link) => {
-    try {
-      const href = link.href;
-      const isSameOrigin = href && (href.startsWith(window.location.origin) || !href.startsWith("http"));
-      if (isSameOrigin) {
-        const response = await fetch(href);
-        if (response.ok) {
-          const cssText = await response.text();
-          if (cssText.includes("oklch") || cssText.includes("oklab")) {
-            const sanitized = replaceOklchInCss(cssText);
-            const tempStyle = document.createElement("style");
-            tempStyle.textContent = sanitized;
-            document.head.appendChild(tempStyle);
-            tempStyles.push(tempStyle);
-
-            let originalDisabled = false;
-            if (link.sheet) {
-              originalDisabled = link.sheet.disabled;
-              link.sheet.disabled = true;
-            } else {
-              link.setAttribute("data-original-disabled", "true");
-              link.disabled = true;
-            }
-            originalStyles.push({ element: link, originalDisabled });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to fetch or process stylesheet:", link.href, e);
-    }
-  });
-
-  await Promise.all(fetchPromises);
-
-  return {
-    restore: () => {
-      originalStyles.forEach(({ element, originalDisabled }) => {
-        if (element.sheet) {
-          element.sheet.disabled = originalDisabled;
-        } else {
-          element.disabled = originalDisabled;
-          const originalMedia = element.getAttribute("data-original-media");
-          if (originalMedia !== null) {
-            element.setAttribute("media", originalMedia);
-            element.removeAttribute("data-original-media");
-          }
-        }
-      });
-
-      tempStyles.forEach((temp) => temp.remove());
-
-      originalInlineStyles.forEach(({ element, styleAttr }) => {
-        element.setAttribute("style", styleAttr);
-      });
-    }
-  };
-}
+import { downloadElementAsPdf } from "../lib/cvCapturePdf";
 
 interface CandidatePreviewProps {
   candidate: Candidate;
@@ -297,47 +41,14 @@ export default function CandidatePreview({
   };
 
   const handleDownloadPdf = async () => {
-    const element = document.getElementById("cv-printable-sheet");
-    if (!element) {
-      console.error("Printable sheet element not found");
-      return;
-    }
-
     setIsDownloading(true);
-    
-    // Temporarily replace OKLCH and OKLAB colors in stylesheets and inline styles to prevent html2canvas from crashing
-    let colorsBypass: { restore: () => void } | null = null;
-
     try {
-      colorsBypass = await replaceOklchColorsForPdfAsync();
-
-      const opt = {
-        margin:       [0, 0, 0, 0],
-        filename:     `CV_${candidate.name.replace(/\s+/g, "_")}_${candidate.refNo}.pdf`,
-        image:        { type: "jpeg", quality: 0.98 },
-        html2canvas:  { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true,
-          logging: false,
-          // foreignObjectRendering lets the browser's own engine draw the page
-          // (instead of html2canvas manually redrawing each glyph), which is
-          // required for Arabic/RTL text to render correctly in the exported PDF.
-          foreignObjectRendering: true
-        },
-        jsPDF:        { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak:    { mode: ["css", "legacy"] }
-      };
-
-      // @ts-ignore
-      await html2pdf().set(opt).from(element).save();
+      const sanitizedName = candidate.name.replace(/\s+/g, "_");
+      const filename = `CV_${sanitizedName}_${candidate.refNo || "document"}.pdf`;
+      await downloadElementAsPdf("cv-printable-sheet", filename);
     } catch (err) {
-      console.error("Failed to generate and download PDF:", err);
+      console.error("Failed to capture and download PDF:", err);
     } finally {
-      // Always restore the original stylesheet contents and inline styles to keep the interactive UI perfect
-      if (colorsBypass) {
-        colorsBypass.restore();
-      }
       setIsDownloading(false);
     }
   };
@@ -399,14 +110,14 @@ export default function CandidatePreview({
               onClick={handleDownloadPdf}
               disabled={isDownloading}
               className="inline-flex items-center gap-2 py-2 px-3.5 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm"
-              title="Save the exact HTML CV layout as a perfect PDF"
+              title="Download standard PDF of this CV"
             >
               {isDownloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Download className="w-4 h-4" />
               )}
-              {isDownloading ? "Downloading..." : "Download / Save PDF"}
+              {isDownloading ? "Downloading..." : "Download PDF"}
             </button>
 
             <button

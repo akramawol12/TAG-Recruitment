@@ -380,7 +380,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
                     className="inline-flex items-center gap-1.5 py-2 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-md shadow-indigo-100"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    Preview CV PDF
+                    Preview Standardized CV
                   </button>
                 </div>
               </div>
@@ -764,7 +764,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
                                 <button
                                   onClick={() => setActivePreviewCandidate(cand)}
                                   className="p-1.5 hover:bg-slate-100 border border-transparent hover:border-slate-200 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
-                                  title="Generate Standardized CV PDF Preview"
+                                  title="Preview Standardized CV"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
@@ -848,7 +848,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
 
       {/* Slideovers & Modals */}
       <AnimatePresence>
-        {/* Candidate PDF Sheet Preview Screen */}
+        {/* Standardized CV Preview Screen */}
         {activePreviewCandidate && (() => {
           const liveCandidate = candidates.find(c => c.id === activePreviewCandidate.id) || activePreviewCandidate;
           return (
@@ -863,7 +863,7 @@ export default function Dashboard({ userName, userEmail, userUid, onLogout }: Da
           );
         })()}
 
-        {/* CV Builder "Export CV PDF" preview — uses the unsaved form data directly, not the saved record */}
+        {/* CV Builder Form Preview Screen — uses the unsaved form data directly */}
         {draftPreviewCandidate && (
           <CandidatePreview
             candidate={draftPreviewCandidate}

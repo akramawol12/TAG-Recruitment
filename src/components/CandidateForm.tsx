@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { 
   X, Save, AlertCircle, FileText, Upload, Sparkles, User, 
-  BookOpen, Globe, Heart, Shield, Check, RefreshCw, Download, Loader2, Plus, Trash2
+  BookOpen, Globe, Heart, Shield, Check, RefreshCw, Loader2, Plus, Trash2
 } from "lucide-react";
 import { Candidate, Country, Agency } from "../types";
 import { apiDbSaveCandidate } from "../lib/api";
@@ -105,7 +105,7 @@ export default function CandidateForm({
 }: CandidateFormProps) {
   const [activeTab, setActiveTab] = useState<"personal" | "passport" | "skills" | "deployment" | "attachments">("personal");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isParsingMRZ, setIsParsingMRZ] = useState(false);
   const [isExtractingAI, setIsExtractingAI] = useState(false);
@@ -691,9 +691,9 @@ export default function CandidateForm({
     }
   };
 
-  // Export to PDF directly from the CV Builder Form state
-  const handleExportPdf = async () => {
-    setIsExportingPdf(true);
+  // Preview the CV directly from the CV Builder Form state
+  const handlePreviewCv = async () => {
+    setIsPreviewing(true);
     setError(null);
     try {
       const activeCountry = countries.find(c => c.id === countryId) || null;
@@ -755,21 +755,17 @@ export default function CandidateForm({
       };
 
       if (onPreview) {
-        // Always use the current, up-to-date CV template (same one shown in "Preview CV PDF").
         onPreview(tempCandidate);
       } else {
-        // onPreview should always be passed by the parent (Dashboard.tsx). If it's ever
-        // missing, fail loudly instead of silently falling back to the outdated jsPDF
-        // template, which no longer matches the live dashboard design.
         throw new Error(
-          "Preview handler not connected. Cannot export CV PDF — please contact support instead of using the outdated export path."
+          "Preview handler not connected. Cannot preview CV — please contact support."
         );
       }
     } catch (err: any) {
-      console.error("PDF Export error:", err);
-      setError(err.message || "Failed to generate and export PDF.");
+      console.error("Preview error:", err);
+      setError(err.message || "Failed to generate CV preview.");
     } finally {
-      setIsExportingPdf(false);
+      setIsPreviewing(false);
     }
   };
 
@@ -1609,7 +1605,7 @@ export default function CandidateForm({
                 />
                 
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <p className="text-[10px] text-slate-400">Generates a Scan-to-Watch QR code block dynamically on the CV PDF</p>
+                  <p className="text-[10px] text-slate-400">Generates a Scan-to-Watch QR code block dynamically on the CV</p>
                   <label className="inline-flex items-center gap-1.5 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer transition-colors bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100">
                     {isUploadingVideo ? (
                       <>
@@ -1792,17 +1788,17 @@ export default function CandidateForm({
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            onClick={handleExportPdf}
-            disabled={isExportingPdf}
+            onClick={handlePreviewCv}
+            disabled={isPreviewing}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-100 cursor-pointer"
-            title="Preview the formatted A4 CV sheet with your latest changes, then download as PDF"
+            title="Preview the formatted A4 CV sheet with your latest changes"
           >
-            {isExportingPdf ? (
+            {isPreviewing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Download className="w-4 h-4" />
+              <FileText className="w-4 h-4" />
             )}
-            <span>Preview / Export CV PDF</span>
+            <span>Preview Standardized CV</span>
           </button>
 
           <button

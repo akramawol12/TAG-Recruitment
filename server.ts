@@ -1105,35 +1105,6 @@ Provide the polished English and the beautiful Arabic translation. Return a JSON
     }
   });
 
-  // 9. Server-Side Image Proxy to bypass client-side CORS and caching restrictions
-  app.get("/api/proxy-image", async (req, res) => {
-    const { url } = req.query;
-    if (!url || typeof url !== "string") {
-      return res.status(400).send("Missing or invalid url parameter.");
-    }
-    try {
-      console.log(`[Proxy Image] Fetching external image: ${url}`);
-      const fetchRes = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-        }
-      });
-      if (!fetchRes.ok) {
-        throw new Error(`HTTP ${fetchRes.status} ${fetchRes.statusText}`);
-      }
-      const contentType = fetchRes.headers.get("content-type") || "image/jpeg";
-      const buffer = await fetchRes.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
-      res.json({
-        success: true,
-        base64: `data:${contentType};base64,${base64}`
-      });
-    } catch (err: any) {
-      console.error("[Proxy Image] Failed to proxy image:", url, err.message);
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
   // Vite development middleware vs Static Production bundle
   async function initServer() {
     if (process.env.NODE_ENV !== "production") {
